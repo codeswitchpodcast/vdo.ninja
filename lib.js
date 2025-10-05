@@ -3335,7 +3335,9 @@ function manageSceneState(data, UUID) {
 				controlButton.innerText = "📡 stop streaming";
 				controlButton.classList.remove("hidden");
 			} else if (session.pcs[UUID].obsState.streaming===false) {
-				controlButton.classList.add("hidden");
+				controlButton.classList.remove("hidden");
+				controlButton.dataset.obsAction = "startStreaming";
+				controlButton.innerText = "📡 start streaming";
 			} else {
 				controlButton.dataset.obsAction = "startStreaming";
 				controlButton.innerText = "📡 start streaming";
@@ -3375,7 +3377,9 @@ function manageSceneState(data, UUID) {
 				controlButton.innerText = "📽 stop recording";
 				controlButton.classList.remove("hidden");
 			} else if (session.pcs[UUID].obsState.recording===false) {
-				controlButton.classList.add("hidden");
+				controlButton.classList.remove("hidden");
+				controlButton.dataset.obsAction = "startRecording";
+				controlButton.innerText = "📽 start recording";
 			} else {
 				controlButton.classList.remove("hidden");
 				controlButton.dataset.obsAction = "startRecording";
@@ -3416,7 +3420,9 @@ function manageSceneState(data, UUID) {
 				controlButton.innerText = "💻 stop virtualcam";
 				controlButton.classList.remove("hidden");
 			} else if (session.pcs[UUID].obsState.virtualcam===false) {
-				controlButton.classList.add("hidden");
+				controlButton.classList.remove("hidden");
+				controlButton.dataset.obsAction = "startVirtualcam";
+				controlButton.innerText = "💻 start virtualcam";
 			} else {
 				controlButton.classList.remove("hidden");
 				controlButton.dataset.obsAction = "startVirtualcam";
@@ -6117,7 +6123,7 @@ function updateMixerRun(e = false) {
 									targetBitrate = totalRoomBitrate;
 								}
 								
-								delayedRequestRate(targetBitrate, j); // 1.2mbps is decent, no? in-focus, so higher bitrate
+								delayedRequestRate(targetBitrate, j); // 1.2-Mbps is decent, no? in-focus, so higher bitrate
 							}
 						}
 					} catch (e) {
@@ -6816,6 +6822,15 @@ function updateMixerRun(e = false) {
 	} catch (e) {
 		errorlog(e);
 		sssid = false;
+	}
+
+	// Add screen share status classes to the gridlayout element
+	if (sscount > 0) {
+		playarea.classList.add("has-screenshare");
+		playarea.classList.remove("no-screenshare");
+	} else {
+		playarea.classList.add("no-screenshare");
+		playarea.classList.remove("has-screenshare");
 	}
 
 	var customLayout = false;
@@ -7606,6 +7621,22 @@ function updateMixerRun(e = false) {
 			container.style.position = "absolute";
 			container.style.display = "block";
 			container.classList.add("container_holder_video");
+			
+			// Add screen share class to individual containers
+			var isScreenShare = false;
+			if (vid.dataset.UUID && session.rpcs[vid.dataset.UUID] && session.rpcs[vid.dataset.UUID].screenShareState) {
+				isScreenShare = true;
+			} else if (vid.id === "screensharesource") {
+				isScreenShare = true;
+			}
+			
+			if (isScreenShare) {
+				container.classList.add("is-screenshare");
+				container.classList.remove("is-not-screenshare");
+			} else {
+				container.classList.add("is-not-screenshare");
+				container.classList.remove("is-screenshare");
+			}
 
 			// ANIMATED  - CONTAINER ; width/height/z-index/cover///////////////
 			if (layout) {
@@ -9280,14 +9311,13 @@ function directIsolateChannel(UUID, channel=null){ // isolateChannel()
 			} else {
 				msg.isolateChannel = false;
 			}
-			session.sendMessage(msg, UUID);
-			
-			
+			return session.sendMessage(msg, UUID);
 			
 		}
 	} catch (e) {
 		errorlog(e);
 	}
+	return false;
 }
 
 function uploadImageSnapshot(PostURL) {
@@ -15327,9 +15357,9 @@ function updateLocalStats() {
 	if (Firefox && totalBitrate === 0 && totalBitrate2 === 0) {
 		// does not support the current stats system
 	} else if (totalBitrate > totalBitrate2) {
-		headerStats += ", <span title='Video+Audio upload bitrate'><span " + uploadQuality + ">🔺</span> " + Math.round(totalBitrate / 10.24) / 100 + "<small>-mbps</small></span>";
+		headerStats += ", <span title='Video+Audio upload bitrate'><span " + uploadQuality + ">🔺</span> " + Math.round(totalBitrate / 10.24) / 100 + "<small>-Mbps</small></span>";
 	} else if (totalBitrate2 > 1000) {
-		headerStats += ", <span title='Total upload bitrate' <span " + uploadQuality + ">🔺</span> " + Math.round(totalBitrate2 / 10.24) / 100 + "<small>-mbps</small></span>";
+		headerStats += ", <span title='Total upload bitrate' <span " + uploadQuality + ">🔺</span> " + Math.round(totalBitrate2 / 10.24) / 100 + "<small>-Mbps</small></span>";
 	} else {
 		headerStats += ", <span title='Total upload bitrate' <span " + uploadQuality + ">🔺</span> " + totalBitrate2 + "<small>-kbps</small></span>";
 	}
@@ -16460,6 +16490,22 @@ session.hangup = function (reload = false, estop = false) {
 	try {
 		window.removeEventListener("beforeunload", confirmUnload);
 	} catch (e) {}
+	
+	// Clean up auto-end timer if it exists
+	if (session.autoEndTimer) {
+		clearTimeout(session.autoEndTimer);
+		session.autoEndTimer = null;
+	}
+	if (session.autoEndInterval) {
+		clearInterval(session.autoEndInterval);
+		session.autoEndInterval = null;
+	}
+	try {
+		const countdown = document.getElementById("autoEndCountdown");
+		if (countdown) {
+			countdown.remove();
+		}
+	} catch (e) {}
 
 	try {
 		if (estop) {
@@ -16669,17 +16715,20 @@ function hangup2() {
 
 function hangupComplete() {
 	try {
-		//if (document.fullscreenElement && session.mobile){
-		//	getById("main").innerHTML = document.getElementById("hangupTemplateMobileFullscreen").innerHTML;
-		//} else {
 		getById("main").innerHTML = document.getElementById("hangupTemplate").innerHTML;
-		//}
+		
 	} catch (e) {}
 
 	updateMixerRun = function () {};
 
 	pokeIframeAPI("hungup", true); // don't use Hangup, as that's an action.
 	pokeAPI("hangup", true);
+	
+	if (session.redirectHangup){
+		setTimeout(function(href){
+			window.location.href = href;
+		}, session.redirectHangupTimer || 0, session.redirectHangup);
+	}
 }
 
 function reloadRequested() {
@@ -17144,6 +17193,10 @@ function getDetailedState(sid = false) {
 			item.streamID = session.rpcs[UUID].streamID;
 			item.label = session.rpcs[UUID].label;
 			item.group = session.rpcs[UUID].group;
+			
+			if (session.rpcs[UUID].stats && session.rpcs[UUID].stats.info){
+				item.miscellaneous = session.rpcs[UUID].stats.info;
+			}
 
 			try {
 				item.layout = session.rpcs[UUID].layout;
@@ -17153,7 +17206,7 @@ function getDetailedState(sid = false) {
 				} else if (session.currentSlots) {
 					item.slot = Object.keys(session.currentSlots).find(key => session.currentSlots[key] === session.rpcs[UUID].streamID) || false;
 				}
-				
+				 
 				if (item.slot) {
 					item.slot = parseInt(item.slot);
 				}
@@ -17905,7 +17958,7 @@ async function directRoomTimer(ele, event = false, preSetTime = false) {
 
 	getById("overlayClockContainer").style.fontSize = "50px";
 
-	if (!event || !(event.ctrlKey || event.metaKey)) {
+	if (!event || !(event.ctrlKey || event.metaKey || event.altKey)) {
 		if (ele.value == 0 || ele.value == 2) {
 			if (preSetTime !== false) {
 				var getTime = preSetTime;
@@ -17923,6 +17976,7 @@ async function directRoomTimer(ele, event = false, preSetTime = false) {
 			ele.classList.remove("red");
 
 			session.roomTimer = Date.now() / 1000 + getTime;
+			session.roomTimerGlobal = false;
 
 			msg.setClock = getTime;
 			setClock(getTime);
@@ -17956,7 +18010,7 @@ async function directRoomTimer(ele, event = false, preSetTime = false) {
 			ele.innerHTML = '<i class="las la-clock"></i><span data-translate="create-timer"> Create Timer</span>';
 		}
 		//miniTranslate(ele);
-	} else if (event.ctrlKey || event.metaKey) {
+	} else if (event.ctrlKey || event.metaKey || event.altKey) {
 		if (ele.value == 1) {
 			ele.value = 3;
 			msg.pauseClock = true;
@@ -17983,10 +18037,39 @@ async function directRoomTimer(ele, event = false, preSetTime = false) {
 			}
 			ele.innerHTML = '<i class="las la-clock"></i><span data-translate="remove-timer"> Remove Timer</span>';
 			ele.classList.add("red");
+		
+		} else if (event.altKey && ele.dataset.actionType && !ele.dataset.UUID && (ele.dataset.actionType == "create-timer-global")){
+			if (preSetTime !== false) {
+				var getTime = preSetTime;
+			} else {
+				var getTime = await promptAlt("Time to set count down timer .\n(This alt-timer will show in scenes-also)", false, false, parseInt(getById("overlayClockContainer").dataset.initial), true);
+			}
+			if (getTime === null) {
+				return;
+			}
+			getTime = parseInt(getTime);
+			getById("overlayClockContainer").dataset.initial = getTime;
+			ele.value = 1;
+			ele.classList.add("pressed");
+			ele.ariaPressed = "true";
+			ele.classList.remove("red");
+
+			session.roomTimer = Date.now() / 1000 + getTime;
+			session.roomTimerGlobal = true;
+
+			msg.setClock = getTime;
+			setClock(getTime);
+			msg.showClock = true;
+			showClock();
+			msg.startClock = true;
+			startClock();
+			ele.innerHTML = '<i class="las la-clock"></i><span data-translate="remove-timer"> Remove Global Timer</span>';
 		}
 	}
 	if (ele.dataset.UUID) {
 		session.sendRequest(msg, ele.dataset.UUID);
+	} else if (session.roomTimerGlobal){
+		session.sendPeers(msg);
 	} else {
 		session.sendRequest(msg);
 	}
@@ -18885,8 +18968,13 @@ async function publishScreen() {
 		warnlog("navigator.mediaDevices.getSupportedConstraints() not supported");
 	}
 
-	var overrideFramerate = false;
-	if (session.frameRate !== false && session.maxframeRate != false) {
+	var overrideFramerate = false; 
+	if (session.screensharefps !== false){
+		constraints.video.frameRate = {
+			ideal: session.screensharefps,
+			max: session.screensharefps
+		};
+	} else if (session.frameRate !== false && session.maxframeRate != false) {
 		overrideFramerate = session.frameRate;
 		constraints.video.frameRate = {
 			ideal: session.maxframeRate,
@@ -18929,7 +19017,7 @@ async function publishScreen() {
 				}, 1000);
 			}
 
-			if (!session.cleanOutput) {
+			if (!session.cleanOutput && !session.cleanViewer) {
 				getById("mutebutton").classList.remove("hidden");
 				getById("mutespeakerbutton").classList.remove("hidden");
 				//getById("mutespeakerbutton").className="float";
@@ -19690,11 +19778,23 @@ function soloLinkGenerator(streamID, scene = true) {
 	if (session.token) {
 		passAdd2 += "&token=" + session.token;
 	}
+	
+	// Add auth parameters if in auth mode
+	var authParams = "";
+	if (session.authMode) {
+		// For view links, we need a universal token that bypasses auth
+		if (session.universalViewToken) {
+			authParams = "&universaltoken=" + session.universalViewToken;
+		} else {
+			// Fallback: include auth flag so viewer knows auth is required
+			authParams = "&auth=true";
+		}
+	}
 
 	if (scene) {
-		return "https://" + location.host + location.pathname + "?view=" + streamID + "&solo" + codecGroupFlag + "&room=" + session.roomid + passAdd2 + wss + soloLinkAppended;
+		return "https://" + location.host + location.pathname + "?view=" + streamID + "&solo" + codecGroupFlag + "&room=" + session.roomid + passAdd2 + authParams + wss + soloLinkAppended;
 	} else {
-		return "https://" + location.host + location.pathname + "?view=" + streamID + codecGroupFlag + passAdd2 + wss + soloLinkAppended;
+		return "https://" + location.host + location.pathname + "?view=" + streamID + codecGroupFlag + passAdd2 + authParams + wss + soloLinkAppended;
 	}
 }
 
@@ -21819,10 +21919,21 @@ function randomizeArray(unshuffled) {
 	return arr;
 }
 
-function joinRoom(roomname) {
+async function joinRoom(roomname) {
 	if (roomname.length) {
 		roomname = sanitizeRoomName(roomname);
 		log("Join room: " + roomname);
+		
+		// In auth mode, use auth-aware room joining
+		if (session.authMode && window.vdoAuth) {
+			const hasAccess = await window.vdoAuth.joinRoom(roomname);
+			if (!hasAccess) {
+				return; // Access denied or auth required
+			}
+			// Room ID might have changed if it was an alias
+			roomname = session.roomid;
+		}
+		
 		updateVolume(false); // chance of a race condition, but unlikely and not a big deal if so.
 		session.joinRoom(roomname).then(
 			function (response) {
@@ -21834,6 +21945,24 @@ function joinRoom(roomname) {
 					session.seedStream();
 				} else {
 					session.joiningRoom = false; // no seeding callback
+				}
+				
+				// Create universal token for directors in auth mode
+				if (session.director && session.authMode && session.authToken && !session.universalViewToken) {
+					vdoAuth.createUniversalToken().then(() => {
+						if (session.universalViewToken) {
+							updateAllSoloLinks();
+						}
+					});
+				}
+
+				// Apply any pending room settings selected pre-join (access mode, allowlist)
+				if (session.director && session.authMode && window.vdoAuth && session.authToken && session.pendingRoomSettings) {
+					try {
+						window.vdoAuth.updateRoomSettings(session.realRoomId || session.roomid, session.pendingRoomSettings);
+					} catch(e) { console.error(e); }
+					// Clear once applied
+					session.pendingRoomSettings = null;
 				}
 				var token = "";
 				if (session.token) {
@@ -22019,6 +22148,33 @@ async function createRoom(roomname = false, reload = false) {
 		log(roomname);
 
 		var passwordRoom = document.getElementById("passwordRoom") ? sanitizePassword(document.getElementById("passwordRoom").value) : "";
+
+		// Pre-join SSO room setup (optional)
+		try {
+			var ssoBox = getById('useSSOForRoom');
+			if (ssoBox && ssoBox.checked) {
+				// Enable auth mode for this room
+				session.authMode = true;
+				// Director should sign in before managing the room
+				// Note: join gating handled by vdoAuth.joinRoom in joinRoom()
+				// Capture desired access mode to apply after join
+				var selected = document.querySelector('input[name="ssoAccessMode"]:checked');
+				var accessMode = (selected && selected.value) ? selected.value : 'public';
+				var allowlist = [];
+				if (accessMode === 'allowlist') {
+					var csv = (getById('preAllowlistCSV') && getById('preAllowlistCSV').value) ? getById('preAllowlistCSV').value : '';
+					if (csv) {
+						allowlist = csv.split(',').map(x => x.trim()).filter(x => x.length > 0);
+					}
+				}
+				// Store to apply after join
+				session.pendingRoomSettings = { accessMode: accessMode, allowlist: allowlist };
+				// If guests must sign in (authenticated/allowlist), mark as requireAuth for UX
+				if (accessMode === 'authenticated' || accessMode === 'allowlist') {
+					session.requireAuth = true;
+				}
+			}
+		} catch(e) {}
 	}
 
 	session.roomid = roomname;
@@ -22701,14 +22857,45 @@ async function createRoomCallback(passAdd, passAdd2) {
 	if (session.token) {
 		token += "&token=" + session.token;
 	}
+	
+	// Add auth parameters if in auth mode
+	var authParams = "";
+	if (session.authMode) {
+		authParams = "&auth=true";
+		
+		// Create universal token for scene links if we're authenticated
+		if (session.authToken && !session.universalViewToken) {
+			vdoAuth.createUniversalToken().then(() => {
+				// Update all links once token is created
+				if (session.universalViewToken) {
+					// Update scene link with universal token
+					var sceneAuthParams = "&universaltoken=" + session.universalViewToken;
+					getById("director_block_3").dataset.raw = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
+					getById("director_block_3").href = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
+					getById("director_block_3").innerText = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
+					
+					// Update all solo links
+					updateAllSoloLinks();
+				}
+			});
+		}
+	}
 
-	getById("director_block_1").dataset.raw = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token;
-	getById("director_block_1").href = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token;
-	getById("director_block_1").innerText = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token;
+	getById("director_block_1").dataset.raw = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token + authParams;
+	getById("director_block_1").href = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token + authParams;
+	getById("director_block_1").innerText = "https://" + location.host + location.pathname + "?room=" + session.roomid + broadcastString + passAdd + wss + queue + token + authParams;
 
-	getById("director_block_3").dataset.raw = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token;
-	getById("director_block_3").href = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token;
-	getById("director_block_3").innerText = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token;
+	// For scene links, use universal token if available
+	var sceneAuthParams = "";
+	if (session.authMode && session.universalViewToken) {
+		sceneAuthParams = "&universaltoken=" + session.universalViewToken;
+	} else if (session.authMode) {
+		sceneAuthParams = authParams;
+	}
+	
+	getById("director_block_3").dataset.raw = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
+	getById("director_block_3").href = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
+	getById("director_block_3").innerText = "https://" + location.host + location.pathname + "?scene&room=" + session.roomid + codecGroupFlag + passAdd2 + wss + token + sceneAuthParams;
 
 	if (session.cleanDirector == false && session.cleanOutput == false) {
 		getById("roomHeader").style.display = "";
@@ -22742,9 +22929,12 @@ async function createRoomCallback(passAdd, passAdd2) {
 			// if null or false, we want to show the solo link, since the director won't have their control box. The director will be visible in their solo link
 			getById("miniPerformer").innerHTML = '<button id="press2talk" onmousedown="event.preventDefault(); event.stopPropagation();" class="float" onclick="press2talk(true);" title="You can also enable the director`s Video Output afterwards by clicking the Setting`s button"><i class="las la-headset"></i><span data-translate="push-to-talk-enable"> enable director`s microphone or video<br />(only guests can see this feed)</span></button>';
 			//miniTranslate(getById("miniPerformer"));
-			getById("grabDirectorSoloLink").dataset.raw = "https://" + location.host + location.pathname + "?solo&r=" + session.roomid + "&v=" + session.streamID + passAdd2 + wss + token;
-			getById("grabDirectorSoloLink").href = "https://" + location.host + location.pathname + "?solo&r=" + session.roomid + "&v=" + session.streamID + passAdd2 + wss + token;
-			getById("grabDirectorSoloLink").innerText = "https://" + location.host + location.pathname + "?solo&r=" + session.roomid + "&v=" + session.streamID + passAdd2 + wss + token;
+			
+			// Use soloLinkGenerator to get proper auth parameters
+			var directorSoloLink = soloLinkGenerator(session.streamID, true);
+			getById("grabDirectorSoloLink").dataset.raw = directorSoloLink;
+			getById("grabDirectorSoloLink").href = directorSoloLink;
+			getById("grabDirectorSoloLink").innerText = directorSoloLink;
 			getById("grabDirectorSoloLinkParent").classList.remove("hidden");
 		} else {
 			getById("miniPerformer").innerHTML = '<button id="press2talk" onmousedown="event.preventDefault(); event.stopPropagation();" class="float" onclick="press2talk(true);" title="You can also enable the director`s Video Output afterwards by clicking the Setting`s button"><i class="las la-headset"></i><span data-translate="push-to-talk-enable-2"> enable director`s microphone or video</span></button>';
@@ -25296,18 +25486,25 @@ function gotDevices(deviceInfos, miconly = false) {
 			var notmatched = [];
 			for (let i = 0; i !== deviceInfos.length; ++i) {
 				if (deviceInfos[i].kind === "audioinput") {
+					var deviceMatched = false;
 					if (session.audioDevice.includes(deviceInfos[i].deviceId)) {
 						matched1.push(deviceInfos[i]);
+						deviceMatched = true;
 					} else if (session.audioDevice.includes(normalizeDeviceLabel(deviceInfos[i].label))) {
 						matched1.push(deviceInfos[i]);
+						deviceMatched = true;
 					} else {
 						for (var j = 0; j < session.audioDevice.length; j++) {
 							if (normalizeDeviceLabel(deviceInfos[i].label).includes(session.audioDevice[j])) {
 								matched2.push(deviceInfos[i]);
 								log("A DEVICE FOUND = " + deviceInfos[i].label);
+								deviceMatched = true;
 								break;
 							}
 						}
+					}
+					if (!deviceMatched) {
+						notmatched.push(deviceInfos[i]);
 					}
 				} else {
 					notmatched.push(deviceInfos[i]);
@@ -25485,6 +25682,7 @@ function gotDevices(deviceInfos, miconly = false) {
 		}
 
 		var counter = 1;
+		var addedDeviceIds = new Set(); // Track already added devices
 		for (let i = 0; i !== deviceInfos.length; ++i) {
 			var deviceInfo = deviceInfos[i];
 			if (deviceInfo == null) {
@@ -25492,6 +25690,12 @@ function gotDevices(deviceInfos, miconly = false) {
 			}
 
 			if (deviceInfo.kind === "audioinput") {
+				// Skip if this device was already added
+				if (addedDeviceIds.has(deviceInfo.deviceId)) {
+					log("Skipping duplicate audio device: " + deviceInfo.label);
+					continue;
+				}
+				addedDeviceIds.add(deviceInfo.deviceId);
 				option = document.createElement("input");
 				option.type = "checkbox";
 				counter++;
@@ -26866,6 +27070,36 @@ async function getAudioOnly(selector, trackid = null, override = false) {
 	var audioList = [];
 	var streams = [];
 	log("getAudioOnly()");
+
+	// Fast-path: if override includes a specific deviceId, use it directly
+	if (override && override.audio && (override.audio.deviceId || (override.audio.deviceId && override.audio.deviceId.exact))) {
+		let o = JSON.parse(JSON.stringify(override));
+		if (typeof o.audio.deviceId === "string") {
+			o.audio.deviceId = { exact: o.audio.deviceId };
+		}
+		o.video = false;
+		if (Firefox) {
+			o = toFirefoxConstraint(o);
+		}
+		warnlog("navigator.mediaDevices.getUserMedia starting (override)...");
+		if (navigator.mediaDevices) {
+			var stream = await navigator.mediaDevices
+				.getUserMedia(o)
+				.then(function (stream2) {
+					log("get audio sucecss");
+					pokeIframeAPI("local-microphone-event");
+					return stream2;
+				})
+				.catch(function (err) {
+					warnlog(err);
+					return false;
+				});
+			if (stream) {
+				streams.push(stream);
+			}
+		}
+		return streams;
+	}
 	for (var i = 0; i < audioSelect.length; i++) {
 		if (audioSelect[i].value == "ZZZ") {
 			continue;
@@ -26921,19 +27155,14 @@ async function getAudioOnly(selector, trackid = null, override = false) {
 				constraint.audio.voiceIsolation = true;
 			}
 		}
-		constraint.video = false;
-		if (override !== false) {
-			log("Override true");
-			if (override.audio && override.audio.deviceId) {
-				if (audioList[i].value == override.audio.deviceId) {
-					constraint = override;
-				} else {
-					// not the device we want to hack.
-				}
-			} else {
+			constraint.video = false;
+			if (override !== false) {
+				log("Override true");
 				constraint = override;
+				if (constraint.audio && typeof constraint.audio.deviceId === "string") {
+					constraint.audio.deviceId = { exact: constraint.audio.deviceId };
+				}
 			}
-		}
 
 		if (audioList[i].value && SelectedAudioInputDevices) {
 			if (SelectedAudioInputDevices.indexOf(audioList[i].value) === -1) {
@@ -27869,8 +28098,8 @@ async function toggleScreenShare(reload = false) {
 
 var ipcRenderer = false;
 var ElectronDesktopCapture = false;
-var windowAudioCapture = null;
-var capturedAudioStream = null;
+							  
+							   
 
 if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 	// this enables Screen Capture in Electron
@@ -27878,10 +28107,7 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 		if (!ipcRenderer) {
 			ipcRenderer = require("electron").ipcRenderer;
 		}
-		
-		// Initialize WindowAudioStream helper
-		windowAudioCapture = new WindowAudioStream();
-		
+  
 		window.navigator.mediaDevices.getDisplayMedia = (constraints = false) => {
 			return new Promise(async (resolve, reject) => {
 				try {
@@ -27927,6 +28153,11 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 									new_constraints.video.mandatory.maxFrameRate = constraints.video.frameRate.ideal;
 								}
 							} catch (e) {}
+							///
+							
+							//if (Firefox){ // this is electron
+							//	new_constraints = toFirefoxConstraint(new_constraints);
+							//}
 							
 							warnlog("navigator.mediaDevices.getUserMedia starting...");
 							const stream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
@@ -27985,6 +28216,11 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 									new_constraints.video.mandatory.maxFrameRate = constraints.video.frameRate.ideal;
 								}
 							} catch (e) {}
+							///
+							
+							//if (Firefox){
+							//	new_constraints = toFirefoxConstraint(new_constraints);
+							//}
 							
 							warnlog("navigator.mediaDevices.getUserMedia starting...");
 							const stream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
@@ -28026,27 +28262,32 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 								}
 							} catch (e) {}
 							warnlog(new_constraints);
+							///
+							
+							//if (Firefox){
+							//	new_constraints = toFirefoxConstraint(new_constraints);
+							//}
 							
 							warnlog("navigator.mediaDevices.getUserMedia starting...");
 							const stream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
 							resolve(stream);
 						}
 					} else {
-						// Get both sources and window audio
+										  
 						const sources = await ipcRenderer.sendSync("getSources", { types: ["screen", "window"] });
+	  
+												
+																		
+	  
+															   
+								
+									   
+								 
+								 
 						
-						// Get window list with audio capabilities
-						const windowsWithAudio = await window.electronApi.getWindowList();
-						
-						// Create a map of window IDs to process IDs for matching
-						const windowAudioMap = {};
-						windowsWithAudio.forEach(win => {
-							windowAudioMap[win.id] = {
-								processId: win.processId,
-								title: win.title
-							};
-						});
-						
+		 
+		 
+	  
 						const selectionElem = document.createElement("div");
 						selectionElem.classList = "desktop-capturer-selection";
 
@@ -28076,41 +28317,42 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 						  <ul class="desktop-capturer-selection__list">
 							${sources
 								.map(
-									({ id, name, thumbnail, display_id, appIcon }) => {
-										// Find if this window has audio capability
-										const hasAudioCapability = Object.values(windowAudioMap).some(win => 
-											win.title.includes(name) || name.includes(win.title)
-										);
-										
-										return `
+									({ id, name, thumbnail, display_id, appIcon }) => `
+													 
+																			   
+															   
+			
+		  
+				  
 							  <li class="desktop-capturer-selection__item">
-								<button class="desktop-capturer-click desktop-capturer-selection__btn" data-id="${id}" data-name="${name}" title="${name}">
+								<button class="desktop-capturer-click desktop-capturer-selection__btn" data-id="${id}" title="${name}">
 								  <img class="desktop-capturer-selection__thumbnail" src="${thumbnail.toDataURL()}" />
 								  <span class="desktop-capturer-selection__name">${name}</span>
-								  ${hasAudioCapability ? 
-										`<div class="desktop-capturer-selection__audio-option">
-											<label title="Capture window audio">
-												<input type="checkbox" class="capture-window-audio" data-source-name="${name}">
-												<span><i class="las la-volume-up"></i> Capture audio</span>
-											</label>
-										</div>` : ''}
+								 
+																 
+											   
+																						   
+																	   
+				   
+					   
 								</button>
 							  </li>
-							`})
+							`
+								)
 								.join("")}
-							<div id="alsoCaptureAudioParent1" style="text-align: center;margin: auto 5px;font-size: 120%;">
-								<i class="las la-music" style="font-size:40px;"></i><br />Include System Audio<br />
-								<input id="alsoCaptureAudio" style="width:20px;height:20px;margin-top: 10px;" type="checkbox" checked>
-							</div>
-							<div id="alsoCaptureAudioParent2" style="text-align: center;margin: auto 5px;font-size: 120%;display:none;">
-								<i class="las la-music" style="font-size:40px;"></i><br />Audio capture not <br />supported on macOS
-							</div>
-							<button id="captureDesktopAudio" class="desktop-capturer-click" style="margin: 10px;">
-								<i class="las la-music" style="font-size:40px;"></i><br />Capture ONLY<br />Desktop Audio
-							</button>
-							<button id="cancelscreenshare" style="margin: 10px; background-color: #F88; width: 100px;">
-								<i class="las la-window-close" style="font-size:40px;"></i><br />Cancel
-							</button>
+																									  
+																							
+							<div id="alsoCaptureAudioParent1" style="text-align: center;margin: auto 5px;font-size: 120%;"><i class="las la-music" style="font-size:40px;"></i><br />Include Desktop Audio<br /><input id="alsoCaptureAudio" style="width:20px;height:20px;margin-top: 10px;" type="checkbox" checked></div>
+			 
+							<div id="alsoCaptureAudioParent2" style="text-align: center;margin: auto 5px;font-size: 120%;display:none;"><i class="las la-music" style="font-size:40px;"></i><br />Audio capture not <br />supported on macOS</div>
+																											
+			 
+																							 
+							<button id="captureDesktopAudio" class="desktop-capturer-click" style="margin: 10px;"><i class="las la-music" style="font-size:40px;"></i><br />Capture ONLY<br />Desktop Audio</button>
+				
+							<button id="cancelscreenshare" style="margin: 10px; background-color: #F88; width: 100px;"><i class="las la-window-close" style="font-size:40px;"></i><br />Cancel</button>
+																			   
+				
 						  </ul>
 						</div>
 					  `;
@@ -28128,7 +28370,7 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 							selectionElem.remove();
 							reject(null);
 						});
-						
+	  
 						document.querySelectorAll(".desktop-capturer-click").forEach(button => {
 							button.addEventListener("click", async () => {
 								try {
@@ -28148,6 +28390,10 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 										new_constraints.video.mandatory.maxFrameRate = 1;
 										warnlog(new_constraints);
 										
+										//if (Firefox){
+										//	new_constraints = toFirefoxConstraint(new_constraints);
+										//}
+										
 										warnlog("navigator.mediaDevices.getUserMedia starting...");
 										const stream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
 										if (stream.getVideoTracks().length) {
@@ -28159,7 +28405,7 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 										selectionElem.remove();
 									} else {
 										var audioStream = false;
-										// Check if we should capture system audio
+													
 										if (getById("alsoCaptureAudio").checked) {
 											var new_constraints = {
 												audio: {
@@ -28176,6 +28422,10 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 											new_constraints.video.mandatory.maxFrameRate = 1;
 											warnlog(new_constraints);
 											
+											//if (Firefox){
+											//	new_constraints = toFirefoxConstraint(new_constraints);
+											//}
+											
 											warnlog("navigator.mediaDevices.getUserMedia starting...");
 											audioStream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
 											if (audioStream.getVideoTracks().length) {
@@ -28185,47 +28435,47 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 											}
 										}
 
-										// Get the source ID for the selected window
+													  
 										const id = button.getAttribute("data-id");
 										const source = sources.find(source => source.id === id);
 										if (!source) {
 											throw new Error(`Source with id ${id} does not exist`);
 										}
+		  
+															 
+															  
+																			  
+								   
+		  
+												  
+													   
+									 
+												
+																				   
+									
+				   
+			 
+			
+		   
+														   
+							   
+				 
+										 
+									   
+											  
+										 
+			  
+			 
+								 
+																				 
+																			
+						 
+																 
+			 
+			
+		   
+		  
 										
-										// Check if we should capture window-specific audio
-										const sourceName = button.getAttribute("data-name");
-										const audioCheckbox = button.querySelector('.capture-window-audio');
-										let windowAudioId = null;
-										
-										// If window-specific audio is requested
-										if (audioCheckbox && audioCheckbox.checked) {
-											// Find the window by name
-											for (const win of windowsWithAudio) {
-												if (win.title.includes(sourceName) || sourceName.includes(win.title)) {
-													windowAudioId = win.id;
-													break;
-												}
-											}
-											
-											// Start capturing audio for the specific window
-											if (windowAudioId) {
-												try {
-													// Stop any previous capture
-													if (capturedAudioStream) {
-														await windowAudioCapture.stop();
-														capturedAudioStream = null;
-													}
-													
-													// Start the capture
-													capturedAudioStream = await windowAudioCapture.start(windowAudioId);
-													console.log("Window audio capture started for: " + sourceName);
-												} catch (e) {
-													console.error("Failed to capture window audio:", e);
-												}
-											}
-										}
-										
-										// Setup normal screen capture
 										var new_constraints = {
 											audio: false,
 											video: {
@@ -28252,18 +28502,21 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 										} catch (e) {}
 										warnlog(new_constraints);
 										
+										//if (Firefox){
+										//	new_constraints = toFirefoxConstraint(new_constraints);
+										//}
 										warnlog("navigator.mediaDevices.getUserMedia starting...");
 										const stream = await window.navigator.mediaDevices.getUserMedia(new_constraints);
 
-										// Add system audio if available
+										  
 										if (audioStream && audioStream.getAudioTracks().length) {
 											stream.addTrack(audioStream.getAudioTracks()[0]);
 										}
-										
-										// Add window-specific audio if available
-										if (capturedAudioStream && capturedAudioStream.getAudioTracks().length) {
-											stream.addTrack(capturedAudioStream.getAudioTracks()[0]);
-										}
+		  
+												   
+																				   
+																	
+		   
 
 										resolve(stream);
 										selectionElem.remove();
@@ -28285,55 +28538,7 @@ if (navigator.userAgent.toLowerCase().indexOf(" electron/") > -1) {
 	} catch (e) {
 		warnlog("Couldn't load electron's screen capture. Elevate the app's permission to allow it (right-click?)");
 	}
-	
-	try {
-		if (!isIFrame){
-			const draggableCSS = `
-			  #electronDragZone, #header { -webkit-app-region: drag; }
-			`;
-			const nonDraggableCSS = `
-			  #popupSelector, a, input, button, #head1, #head4, #head5,
-			  .close, select, button { -webkit-app-region: no-drag; }
-			`;
-			const dragStyle = document.createElement('style');
-			dragStyle.textContent = draggableCSS;
-			document.head.appendChild(dragStyle);
-			const noDragStyle = document.createElement('style');
-			noDragStyle.textContent = nonDraggableCSS;
-			document.head.appendChild(noDragStyle);
-			getById("electronDragZone").style.display = "unset";
-		}
-	} catch(e) {
-	  console.error("Error applying Electron/OBS CSS fixes:", e);
-	}
-	
-	// Add styles for audio capture checkboxes
-	const audioCheckboxStyle = document.createElement('style');
-	audioCheckboxStyle.textContent = `
-		.desktop-capturer-selection__audio-option {
-			margin-top: 5px;
-			font-size: 12px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-		}
-		.desktop-capturer-selection__audio-option label {
-			display: flex;
-			align-items: center;
-			cursor: pointer;
-		}
-		.desktop-capturer-selection__audio-option input {
-			margin-right: 5px;
-		}
-		.desktop-capturer-selection__audio-option span {
-			display: flex;
-			align-items: center;
-		}
-		.desktop-capturer-selection__audio-option i {
-			margin-right: 3px;
-		}
-	`;
-	document.head.appendChild(audioCheckboxStyle);
+ 						   
 }
 
 async function grabScreen(quality = 0, audio = true, videoOnEnd = false) {
@@ -28468,7 +28673,12 @@ async function grabScreen(quality = 0, audio = true, videoOnEnd = false) {
 	}
 
 	var overrideFramerate = false;
-	if (session.frameRate !== false && session.maxframeRate != false) {
+	if (session.screensharefps !== false){
+		constraints.video.frameRate = {
+			ideal: session.screensharefps,
+			max: session.screensharefps
+		};
+	} else if (session.frameRate !== false && session.maxframeRate != false) {
 		overrideFramerate = session.frameRate;
 		constraints.video.frameRate = {
 			ideal: session.maxframeRate,
@@ -28573,13 +28783,13 @@ async function grabScreen(quality = 0, audio = true, videoOnEnd = false) {
 				stream.getVideoTracks()[0].onended = function (e) {
 					// if screen share stops,
 					warnlog(e);
-					
-					// Clean up any window-specific audio capture
-					if (windowAudioCapture && capturedAudioStream) {
-						windowAudioCapture.stop();
-						capturedAudioStream = null;
-					}
-					
+	 
+												  
+													 
+								
+								 
+	  
+	 
 					if (session.streamSrc) {
 						session.streamSrc.getVideoTracks().forEach(function (track) {
 							session.streamSrc.removeTrack(track);
@@ -28692,7 +28902,7 @@ async function grabScreen(quality = 0, audio = true, videoOnEnd = false) {
 					warnUser(getTranslation("screen-permissions-denied"), false, false);
 				}
 			} else {
-									if (audio == true) {
+				if (audio == true) {
 					if (err.name == "NotReadableError") {
 						if (!session.cleanOutput) {
 							warnUser(getTranslation("change-audio-output-device"), false, false);
@@ -28720,7 +28930,6 @@ async function grabScreen(quality = 0, audio = true, videoOnEnd = false) {
 			return false;
 		});
 }
-
 function toggleBufferSettings(UUID) {
 	getById("bufferSettings").dataset.UUID = UUID;
 	toggle(getById("bufferSettings"));
@@ -28809,6 +29018,12 @@ function toggleRoomSettings() {
 			getById("ltbSettingInputManual").value = session.limitTotalBitrate;
 			getById("ltbSettingInput").value = session.limitTotalBitrate;
 			getById("ltbSettingInputFeedback").innerHTML = session.limitTotalBitrate || "Disabled";
+		}
+		
+		// Show auth access control if in auth mode and user is director
+		if (session.authMode && session.director && window.vdoAuth) {
+			getById("authAccessControl").style.display = "block";
+			loadRoomAccessSettings();
 		}
 	}
 }
@@ -31236,6 +31451,30 @@ async function press2talk(clean = false) {
 
 				//await toggleSettings();
 
+
+				if (session.autorecord || session.autorecordlocal) {
+					log("AUTO RECORD START");
+					setTimeout(
+						function (v) {
+							var videoKbps = session.recordDefault;
+							if (session.recordLocal !== false) {
+								videoKbps = session.recordLocal;
+							}
+
+							if (document.querySelector("[data-action-type='recorder-local'][data-sid='" + session.streamID + "']")) {
+								recordLocalVideoToggle(true);
+							} else if (v.stopWriter || v.recording) {
+							} else if (v.startWriter) {
+								v.startWriter();
+							} else {
+								recordLocalVideo(null, videoKbps, v);
+							}
+						},
+						2000,
+						session.videoElement
+					);
+				}
+				
 				log("session.seeding: " + session.seeding);
 
 				if (session.seeding) {
@@ -31251,28 +31490,6 @@ async function press2talk(clean = false) {
 					return;
 				}
 
-				if (session.autorecord || session.autorecordlocal) {
-					log("AUTO RECORD START");
-					setTimeout(
-						function (v) {
-							var videoKbps = session.recordDefault;
-							if (session.recordLocal !== false) {
-								videoKbps = session.recordLocal;
-							}
-
-							if (session.director) {
-								recordVideo(document.querySelector("[data-action-type='recorder-local'][data-sid='" + session.streamID + "']"), null, videoKbps);
-							} else if (v.stopWriter || v.recording) {
-							} else if (v.startWriter) {
-								v.startWriter();
-							} else {
-								recordLocalVideo(null, videoKbps, v);
-							}
-						},
-						2000,
-						session.videoElement
-					);
-				}
 
 				if (session.meshcast) {
 					meshcast();
@@ -31738,6 +31955,41 @@ session.postPublish = async function () {
 		} else {
 			await triggerNotification(session.poke);
 		}
+	}
+	
+	if (session.autoEnd) {
+		log("Auto-end timer started: " + session.autoEnd + "ms");
+		
+		// Create countdown display
+		const countdownDiv = document.createElement("div");
+		countdownDiv.id = "autoEndCountdown";
+		countdownDiv.style.cssText = "position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px 15px; border-radius: 5px; font-size: 16px; z-index: 9999; display: flex; align-items: center; gap: 8px;";
+		countdownDiv.innerHTML = '<span style="font-size: 20px;">⏱️</span><span id="autoEndTime">--:--</span>';
+		document.body.appendChild(countdownDiv);
+		
+		// Update countdown every second
+		let remainingTime = session.autoEnd;
+		const updateCountdown = () => {
+			const minutes = Math.floor(remainingTime / 60000);
+			const seconds = Math.floor((remainingTime % 60000) / 1000);
+			document.getElementById("autoEndTime").textContent = 
+				String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+			remainingTime -= 1000;
+			
+			if (remainingTime < 0) {
+				clearInterval(session.autoEndInterval);
+			}
+		};
+		
+		updateCountdown(); // Initial update
+		session.autoEndInterval = setInterval(updateCountdown, 1000);
+		
+		// Set timer to end stream
+		session.autoEndTimer = setTimeout(() => {
+			log("Auto-end timer expired, ending stream");
+			clearInterval(session.autoEndInterval);
+			session.hangup();
+		}, session.autoEnd);
 	}
 	
 };
@@ -35584,6 +35836,9 @@ function updateDirectorsVideo(data, UUID) {
 					input.max = 5;
 					input.min = 0.2;
 					input.step = 0.00001;
+				} else if (i === "exposureTime") {
+					input.min = data.cameraConstraints[i].min;
+					input.max = Math.min(data.cameraConstraints[i].max, 2000);
 				} else {
 					input.min = data.cameraConstraints[i].min;
 					input.max = data.cameraConstraints[i].max;
@@ -37003,6 +37258,9 @@ function listCameraSettings() {
 				if (i === "aspectRatio") {
 					input.max = 5;
 					input.min = 0.2;
+				} else if (i === "exposureTime") {
+					input.min = parseFloat(session.cameraConstraints[i].min);
+					input.max = Math.min(parseFloat(session.cameraConstraints[i].max), 2000);
 				} else {
 					input.min = parseFloat(session.cameraConstraints[i].min);
 					input.max = parseFloat(session.cameraConstraints[i].max);
@@ -39674,6 +39932,11 @@ function updateLink(arg, input, solo = false) {
 			}
 		});
 	}
+	
+	// Update all solo links with universal token if in auth mode
+	if (session.authMode && session.universalViewToken) {
+		updateAllSoloLinks();
+	}
 
 	saveDirectorSettings();
 }
@@ -40515,7 +40778,7 @@ function pauseVideo(videoEle, update = true) {
 			popOutClock(taskItemInContext.children[0]);
 		} else if (link.getAttribute("data-action") === "Publish") {
 			var URL = taskItemInContext.href;
-			URL += "&clean&chroma=000&ssar=landscape&nosettings&prefercurrenttab&selfbrowsersurface=include&displaysurface=browser&np&nopush&publish&whippush&whippushtoken";
+			URL += "&clean&chroma=000&ssar=landscape&nosettings&prefercurrenttab&selfbrowsersurface=include&displaysurface=browser&np&nopush&publish&whippush&whippushtoken&q=1";
 			var win = window.open(URL, "targetWindow", "toolbar=no,location=no,status=no,scaling=no,menubar=no,scrollbars=no,resizable=no,width=1280,height=720");
 			win.focus();
 			win.resizeTo(1280, 720);
@@ -43319,7 +43582,7 @@ function updateLocalRecordButton(UUID, recorder) {
 	}
 }
 
-async function recordLocalVideoToggle() {
+async function recordLocalVideoToggle(startonly=false) {
 	if (!session.videoElement) {
 		return;
 	}
@@ -43357,7 +43620,7 @@ async function recordLocalVideoToggle() {
 			}
 		}
 		return true;
-	} else {
+	} else if (!startonly){
 		if ("recording" in session.videoElement) {
 			var res = await recordLocalVideo("stop");
 			log(res);
@@ -49603,7 +49866,7 @@ function getGuestTargetGroup(group, id) {
 	return element;
 }
 
-async function targetGuest(target, action, value = null) {
+async function targetGuest(target, action, value = null, value2 = null) {
 	if (target) {
 		if ((target == (parseInt(target) + "")) && (target < 100)) {
 			target -= 1;
@@ -49813,6 +50076,11 @@ async function targetGuest(target, action, value = null) {
 		if (element) {
 			return sendChat(value, element.dataset.UUID);
 		}
+	} else if (action == "pgm" || action == "channel" ) {
+		var element = getGuestTarget("isolate-channel", target); // just something that probably exists.
+		if (element) {
+			return directIsolateChannel(element.dataset.UUID, (parseInt(value)||null));
+		}
 	} else if (action == 22 || action == "sendDirectorChat") {
 		var element = getGuestTarget("solo-video", target); // just something that probably exists.
 		if (element) {
@@ -49850,6 +50118,70 @@ async function targetGuest(target, action, value = null) {
 		} else {
 			return false;
 		}
+	} else if (action == "requestResolution") { // director's preview or scene preview or s/e; not capture resolution
+		var element = getGuestTarget("solo-video", target); // just need to find the guest
+		if (element) {
+			let resolution = value.split("x");
+			if (resolution.length==2){
+				session.requestResolution(element.dataset.UUID, parseInt(resolution[0]), parseInt(resolution[1]));
+				return true;
+			} else {
+				return "Failed. Must be WIDTHxHEIGHT";
+			}
+			
+		}
+		return false;
+	} else if (action == "setWidth") { // actual capture resolution ; director only
+		var element = getGuestTarget("solo-video", target); // just need to find the guest
+		if (element) {
+			requestVideoHack("width", parseInt(value), element.dataset.UUID);
+			return true;
+		}
+		return false;
+	} else if (action == "setHeight") {
+		var element = getGuestTarget("solo-video", target); // just need to find the guest
+		if (element) {
+			requestVideoHack("height", parseInt(value), element.dataset.UUID);
+			return true;
+		}
+		return false;
+	} else if (action == "setAspectRatio") {
+		var element = getGuestTarget("solo-video", target); // just need to find the guest
+		if (element) {
+			requestVideoHack("aspectRatio", parseFloat(value), element.dataset.UUID);
+			return true;
+		}
+		return false;
+	} else if (action == "requestAspectRatio") {
+		var element = getGuestTarget("solo-video", target); // just need to find the guest
+		if (element) {
+			let maxDimension = parseInt(value2) || 1920;
+			let aspectRatio = 16/9; // default
+			
+			// Parse aspect ratio
+			if (value) {
+				if (value.includes(":")) {
+					let parts = value.split(":");
+					aspectRatio = parseFloat(parts[0]) / parseFloat(parts[1]);
+				} else {
+					aspectRatio = parseFloat(value);
+				}
+			}
+			
+			// Calculate dimensions
+			let width, height;
+			if (aspectRatio >= 1) {
+				width = maxDimension;
+				height = Math.round(maxDimension / aspectRatio);
+			} else {
+				height = maxDimension;
+				width = Math.round(maxDimension * aspectRatio);
+			}
+			
+			session.requestResolution(element.dataset.UUID, width, height);
+			return true;
+		}
+		return false;
 	} else if (action == "startRoomTimer") {
 		var element = getGuestTarget("create-timer", target);
 		if (element) {
@@ -50094,7 +50426,7 @@ function setupCommands() {
 	};
 
 	commands.getDetails = function (value = null, value2 = null) {
-		return getDetailedState();
+		return getDetailedState(value);
 	};
 
 	commands.getStats = function (value = null, value2 = null) {
@@ -50589,6 +50921,75 @@ function setupCommands() {
 		previousDebug = response
 		return {response:response, previous:temp}
 	};
+	
+	commands.width = function (value = null, value2 = null) {
+		// affects LOCAL camera width
+		let width = value ? parseInt(value) : null;
+		if (width) {
+			updateCameraConstraints("width", width, false, false);
+			return true;
+		}
+		return false;
+	};
+
+	commands.height = function (value = null, value2 = null) {
+		// affects LOCAL camera height
+		let height = value ? parseInt(value) : null;
+		if (height) {
+			updateCameraConstraints("height", height, false, false);
+			return true;
+		}
+		return false;
+	};
+
+	commands.aspectRatio = function (value = null, value2 = null) {
+		// affects LOCAL camera aspect ratio
+		if (!value) return false;
+		
+		let aspectRatio;
+		if (typeof value === 'string' && value.includes(":")) {
+			let parts = value.split(":");
+			aspectRatio = parseFloat(parts[0]) / parseFloat(parts[1]);
+		} else {
+			aspectRatio = parseFloat(value);
+		}
+		
+		if (aspectRatio && !isNaN(aspectRatio)) {
+			updateCameraConstraints("aspectRatio", aspectRatio, false, false);
+			return true;
+		}
+		return false;
+	};
+
+	commands.videoConstraint = function (value = null, value2 = null) {
+		// Generic video constraint setter for LOCAL camera
+		// Usage: action=videoConstraint&value=CONSTRAINT_NAME&value2=CONSTRAINT_VALUE
+		if (!value || value2 === null || value2 === undefined) return false;
+		
+		// Parse value2 based on common types
+		let constraintValue = value2;
+		
+		// Handle boolean strings
+		if (value2 === "true") {
+			constraintValue = true;
+		} else if (value2 === "false") {
+			constraintValue = false;
+		} else if (value2 == parseFloat(value2)) {
+			// Handle numeric values
+			constraintValue = parseFloat(value2);
+		}
+		
+		// Special handling for aspectRatio with colon notation
+		if (value === "aspectRatio" && typeof value2 === 'string' && value2.includes(":")) {
+			let parts = value2.split(":");
+			constraintValue = parseFloat(parts[0]) / parseFloat(parts[1]);
+		}
+		
+		// Apply the constraint
+		updateCameraConstraints(value, constraintValue, false, false);
+		return true;
+	};
+
 	return commands;
 }
 var Commands = setupCommands();
@@ -50609,15 +51010,15 @@ async function processMessage(data) {
 		warnlog(data);
 		if ("target" in data && data.target !== "null" && data.target !== null) {
 			if ("action" in data) {
-				if ("value" in data) {
-					return await targetGuest(data.target, data.action, data.value);
+				if ("value" in data && data.value !== "null" && data.value !== null) {
+					return await targetGuest(data.target, data.action, data.value, data.value2 || null);
 				} else {
 					return await targetGuest(data.target, data.action, null);
 				}
 			}
-		} else if ("action" in data) {
+		} else if ("action" in data && data.action !== "null" && data.action !== null) {
 			if (data.action in Commands) {
-				if ("value" in data) {
+				if ("value" in data && data.value !== "null" && data.value !== null) {
 					if (data.value == "true") {
 						data.value = true;
 					} else if (data.value == "false") {
@@ -51358,7 +51759,7 @@ function buttonMIDI(ele, state = null) {
 
 let currentOscillatorIdMidi = 0;
 
-function setupMidiOscillator(callbackFunction) {
+function setupMidiOscillator(callbackFunction, frameRate, timeOne=null, thisOscillatorId=null) {
     if (!thisOscillatorId) {
         thisOscillatorId = ++currentOscillatorIdMidi;
     } else if (currentOscillatorIdMidi !== thisOscillatorId) {
@@ -51531,12 +51932,23 @@ function playbackMIDI(msg, unsafe = false, UUID = null) {
     
     log("play out");
 
-    if (session.midiDelay && "t" in msg) {
-        const timeDelay = session.midiDelay - (Date.now() - msg.t);
-        if (timeDelay <= 0) {
-            playOutMidi(msg);
+    if (session.midiDelay) {
+        let timestamp = null;
+        if ("s" in msg) {
+            timestamp = msg.s;
+        } else if ("t" in msg) {
+            timestamp = msg.t;
+        }
+        
+        if (timestamp !== null) {
+            const timeDelay = session.midiDelay - (Date.now() - timestamp);
+            if (timeDelay <= 0) {
+                playOutMidi(msg);
+            } else {
+                setupMidiOscillator(() => playOutMidi(msg), 1000 / timeDelay);
+            }
         } else {
-            setupMidiOscillator(() => playOutMidi(msg), 1000 / timeDelay);
+            playOutMidi(msg);
         }
     } else {
         playOutMidi(msg);
@@ -51630,8 +52042,8 @@ addEventToAll(".column", "click", function (e, ele) {
 	if (!bounding_box){
 		errorlog("No bounding box for ele found");
 	}
-	ele.style.top = bounding_box.top + "px";
-	ele.style.left = bounding_box.left - 20 + "px";
+	ele.style.top = bounding_box.y + "px";
+	ele.style.left = bounding_box.x - 20 + "px";
 	ele.classList.add("in-animation");
 	ele.classList.remove("pointer");
 	ele.classList.remove("rounded");
@@ -51689,13 +52101,53 @@ addEventToAll(".close", "click", function (e, ele) {
 		target.style.display = "none";
 	});
 	document.body.style.overflow = "auto";
-	var bounding_box = getById("empty-container").parentNode.getBoundingClientRect();
-	setTimeout(function () {
-		// just smoothes things out; breathing room to clean up things first.
-		ele.parentNode.classList.add("out-animation");
-	}, 1);
-	ele.parentNode.style.top = bounding_box.top + "px";
-	ele.parentNode.style.left = bounding_box.left + "px";
+	
+	// Get the actual position where the element should return to
+	var emptyContainer = getById("empty-container");
+	if (emptyContainer) {
+		var targetBox = emptyContainer.getBoundingClientRect();
+		
+		// Update the outlightbox animation with the correct target position
+		const styles =
+			"\
+			@keyframes outlightbox {\
+				0% {\
+					height: 100%;\
+					width: 100%;\
+					top: 0px;\
+					left: 0px;\
+				}\
+				50% {\
+					height: 200px;\
+					top: " +
+			targetBox.top +
+			"px;\
+				}\
+				100% {\
+					height: " + targetBox.height + "px;\
+					width: " +
+			targetBox.width +
+			"px;\
+					top: " +
+			targetBox.top +
+			"px;\
+					left: " +
+			targetBox.left +
+			"px;\
+				}\
+			}\
+		";
+		
+		if (document.getElementById("lightbox-animations")) {
+			getById("lightbox-animations").innerHTML = styles;
+		}
+		
+		// Don't set position here - let the animation handle it
+		setTimeout(function () {
+			// just smoothes things out; breathing room to clean up things first.
+			ele.parentNode.classList.add("out-animation");
+		}, 1);
+	}
 	e.stopPropagation();
 });
 addEventToAll(".column", "animationend", function (e, ele) {
@@ -51727,8 +52179,26 @@ addEventToAll(".column", "animationend", function (e, ele) {
 		ele.classList.remove("columnfade");
 		ele.classList.add("pointer");
 		ele.classList.add("rounded");
-		getById("empty-container").parentNode.removeChild(getById("empty-container"));
-		getById("lightbox-animations").sheet.deleteRule(0);
+		
+		// Clear all inline styles to fully restore original position
+		ele.style.top = "";
+		ele.style.left = "";
+		ele.style.position = "";
+		ele.style.width = "";
+		ele.style.height = "";
+		
+		// Clear stored position data
+		delete ele.dataset.originalTop;
+		delete ele.dataset.originalLeft;
+		delete ele.dataset.originalWidth;
+		delete ele.dataset.originalHeight;
+		
+		if (getById("empty-container")) {
+			getById("empty-container").parentNode.removeChild(getById("empty-container"));
+		}
+		if (getById("lightbox-animations") && getById("lightbox-animations").sheet && getById("lightbox-animations").sheet.cssRules.length > 0) {
+			getById("lightbox-animations").sheet.deleteRule(0);
+		}
 	}
 });
 addEventToAll("#audioSource", "mousedown touchend focusin focusout", function (e, ele) {
@@ -52361,7 +52831,13 @@ async function createSecondStream() {
 		//}
 
 		var overrideFramerate = false;
-		if (session.frameRate !== false && session.maxframeRate != false) {
+		
+		if (session.screensharefps !== false){
+			constraints.video.frameRate = {
+				ideal: session.screensharefps,
+				max: session.screensharefps
+			};
+		} else if (session.frameRate !== false && session.maxframeRate != false) {
 			overrideFramerate = session.frameRate;
 			constraints.video.frameRate = {
 				ideal: session.maxframeRate,
@@ -52800,4 +53276,227 @@ function enableFullscreenZoom(){
 			window.scrollY + (newTop - rect.top)
 		);
 	});
+}
+
+// Auth Access Control Functions
+let currentRoomSettings = null;
+
+async function loadRoomAccessSettings() {
+	if (!session.authMode || !session.roomid || !window.vdoAuth) return;
+	
+	try {
+		// Get room settings
+		const response = await fetch(`${AUTH_SERVICE_URL}/api/room/access`, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${session.authToken}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ room: session.roomid })
+		});
+		
+		if (response.ok) {
+			const roomInfo = await response.json();
+			if (roomInfo.isOwner) {
+				// Get detailed room settings
+				const settingsResponse = await fetch(`${AUTH_SERVICE_URL}/api/room/settings/${session.realRoomId || session.roomid}`, {
+					headers: {
+						'Authorization': `Bearer ${session.authToken}`
+					}
+				});
+				
+				if (settingsResponse.ok) {
+					currentRoomSettings = await settingsResponse.json();
+					
+					// Update UI with current settings
+					const accessMode = currentRoomSettings.accessMode || 'public';
+					document.querySelector(`input[name="roomAccessMode"][value="${accessMode}"]`).checked = true;
+					updateRoomAccessMode(accessMode);
+					
+					// Load allowlist
+					if (currentRoomSettings.allowlist && currentRoomSettings.allowlist.length > 0) {
+						displayAllowlist(currentRoomSettings.allowlist);
+					}
+					
+					// Load pending access requests
+					loadAccessRequests();
+				}
+			}
+		}
+	} catch (e) {
+		console.error('Failed to load room settings:', e);
+	}
+}
+
+function updateRoomAccessMode(mode) {
+	// Show/hide allowlist section based on mode
+	if (mode === 'allowlist') {
+		getById('allowlistSection').style.display = 'block';
+		getById('accessRequestsSection').style.display = 'block';
+	} else {
+		getById('allowlistSection').style.display = 'none';
+		getById('accessRequestsSection').style.display = 'none';
+	}
+	
+	// Update room settings on server
+	if (currentRoomSettings && window.vdoAuth) {
+		window.vdoAuth.updateRoomSettings(session.realRoomId || session.roomid, {
+			accessMode: mode
+		});
+	}
+}
+
+function addToAllowlist() {
+	const input = getById('allowlistInput');
+	const value = input.value.trim();
+	
+	if (!value) return;
+	
+	// Validate format
+	if (!value.startsWith('@') && !value.startsWith('email:')) {
+		alert('Please enter a username (starting with @) or email pattern (starting with email:)');
+		return;
+	}
+	
+	// Add to current allowlist
+	if (!currentRoomSettings) {
+		currentRoomSettings = { allowlist: [] };
+	}
+	
+	if (!currentRoomSettings.allowlist.includes(value)) {
+		currentRoomSettings.allowlist.push(value);
+		
+		// Update server
+		if (window.vdoAuth) {
+			window.vdoAuth.updateRoomSettings(session.realRoomId || session.roomid, {
+				allowlist: currentRoomSettings.allowlist
+			});
+		}
+		
+		// Update display
+		displayAllowlist(currentRoomSettings.allowlist);
+		
+		// Clear input
+		input.value = '';
+	}
+}
+
+function displayAllowlist(allowlist) {
+	const display = getById('allowlistDisplay');
+	display.innerHTML = '';
+	
+	allowlist.forEach(entry => {
+		const item = document.createElement('div');
+		item.style.cssText = 'padding: 5px; margin: 2px 0; background: #f0f0f0; border-radius: 3px; display: flex; justify-content: space-between; align-items: center;';
+		
+		const label = document.createElement('span');
+		label.textContent = entry;
+		
+		const removeBtn = document.createElement('button');
+		removeBtn.textContent = 'Remove';
+		removeBtn.style.cssText = 'padding: 2px 8px; font-size: 12px;';
+		removeBtn.onclick = () => removeFromAllowlist(entry);
+		
+		item.appendChild(label);
+		item.appendChild(removeBtn);
+		display.appendChild(item);
+	});
+}
+
+function removeFromAllowlist(entry) {
+	if (!currentRoomSettings || !currentRoomSettings.allowlist) return;
+	
+	const index = currentRoomSettings.allowlist.indexOf(entry);
+	if (index > -1) {
+		currentRoomSettings.allowlist.splice(index, 1);
+		
+		// Update server
+		if (window.vdoAuth) {
+			window.vdoAuth.updateRoomSettings(session.realRoomId || session.roomid, {
+				allowlist: currentRoomSettings.allowlist
+			});
+		}
+		
+		// Update display
+		displayAllowlist(currentRoomSettings.allowlist);
+	}
+}
+
+async function loadAccessRequests() {
+	if (!session.authMode || !session.roomid || !window.vdoAuth) return;
+	
+	try {
+		const requests = await window.vdoAuth.getRoomAccessRequests(session.realRoomId || session.roomid);
+		displayAccessRequests(requests);
+	} catch (e) {
+		console.error('Failed to load access requests:', e);
+	}
+}
+
+function displayAccessRequests(requests) {
+	const list = getById('accessRequestsList');
+	list.innerHTML = '';
+	
+	if (requests.length === 0) {
+		list.innerHTML = '<div style="padding: 10px; color: #666;">No pending requests</div>';
+		return;
+	}
+	
+	requests.forEach(request => {
+		const item = document.createElement('div');
+		item.style.cssText = 'padding: 10px; margin: 5px 0; background: #f9f9f9; border: 1px solid #ddd; border-radius: 5px;';
+		
+		const info = document.createElement('div');
+		info.innerHTML = `
+			<div style="display: flex; align-items: center; margin-bottom: 5px;">
+				${request.avatar ? `<img src="${request.avatar}" style="width: 30px; height: 30px; border-radius: 50%; margin-right: 10px;">` : ''}
+				<div>
+					<strong>${request.displayName}</strong>
+					<span style="color: #666; margin-left: 5px;">${request.userHandle}</span>
+				</div>
+			</div>
+			<div style="color: #999; font-size: 12px;">
+				${request.provider} • ${new Date(request.requestedAt).toLocaleString()}
+			</div>
+		`;
+		
+		const actions = document.createElement('div');
+		actions.style.cssText = 'margin-top: 8px; display: flex; gap: 10px;';
+		
+		const approveBtn = document.createElement('button');
+		approveBtn.textContent = 'Approve';
+		approveBtn.style.cssText = 'padding: 5px 15px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;';
+		approveBtn.onclick = () => handleAccessRequest(request.userId, 'approve');
+		
+		const denyBtn = document.createElement('button');
+		denyBtn.textContent = 'Deny';
+		denyBtn.style.cssText = 'padding: 5px 15px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;';
+		denyBtn.onclick = () => handleAccessRequest(request.userId, 'deny');
+		
+		actions.appendChild(approveBtn);
+		actions.appendChild(denyBtn);
+		
+		item.appendChild(info);
+		item.appendChild(actions);
+		list.appendChild(item);
+	});
+}
+
+async function handleAccessRequest(userId, action) {
+	if (!window.vdoAuth) return;
+	
+	try {
+		const success = await window.vdoAuth.handleAccessRequest(session.realRoomId || session.roomid, userId, action);
+		if (success) {
+			// Reload access requests
+			loadAccessRequests();
+			
+			// Reload allowlist if approved
+			if (action === 'approve') {
+				loadRoomAccessSettings();
+			}
+		}
+	} catch (e) {
+		console.error('Failed to handle access request:', e);
+	}
 }
